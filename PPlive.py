@@ -26,17 +26,15 @@ def gen_pptv_list():
 
 def gen_m3u8_url(in_url,id):
 	return_urls=[]
-	res={}
 	h=httplib2.Http()
 	resp,content=h.request(in_url,'GET')
 	if resp.status==200:
 		#print content
 		urls=re.findall('>(\\\u[^<]*)<[^>]*>[^<]*<[^>]*>[^<]*<[^<]+show_playing[^>]+>[^<]*<[^"]*"([^"]*)"[^>]+>[^<]*<[^>]*>[^<]*[^<]*<[^>]*>[^<]*[^<]*<[^>]*>[^<]*[^<]*<[^>]*>[^<]*[^<]*<[^>]*>([^<]*)<',content)
 		#urls=re.findall('<[^<]+show_playing[^>]+>[^<]*<[^"]*"([^"]*)"[^>]+>',content)
-		if urls:		
-			#print urls
-			#for url in urls:
+		if urls:			
 			for name,url,titles in urls:
+				res={}
 				js='["list", {"name":["%s","%s"]}]'%(name,titles)
 				j=json.loads(js)
 				#print j[1]['name'][0]
@@ -44,6 +42,7 @@ def gen_m3u8_url(in_url,id):
 				url = url.replace('\\','')
 				res["tv_name"]=j[1]['name'][0]
 				res["playing"]=j[1]['name'][1]
+				print url
 				resp,content=h.request(url,'GET')
 				if resp.status==200:
 					play_ids=re.findall('"ipadurl":"([^"]+)"',content)
@@ -52,13 +51,16 @@ def gen_m3u8_url(in_url,id):
 							m3u8url = play_id.replace('\\','')
 							res["url"]=m3u8url
 							return_urls.append(res)
-	print return_urls
+	#print return_urls
 	return return_urls
 				
 
 if __name__ == '__main__':
-	id='25'
+	#id='25'
 	pptv_lists=gen_pptv_list()
-	gen_m3u8_url(pptv_lists[id]['url'],id)
+	for id in pptv_lists.keys():
+		urls=gen_m3u8_url(pptv_lists[id]['url'],id)
+		for url in urls:
+			print url
 
 	
