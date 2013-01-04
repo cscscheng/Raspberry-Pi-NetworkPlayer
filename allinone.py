@@ -81,12 +81,20 @@ def download_file(url):
 	index=0
 	allurls = geturls(url)
 	keylist = sorted(allurls.keys())
+	ret = 1
 	for key in keylist:
-		downloadcmd='curl -L -s %s -o/root/movie/%s'%(allurls[key],key)
-		os.system(downloadcmd)
-		index = index+1
-		if (index&7)==0:
-			allurls.clear()
-			allurls = geturls('http://www.tudou.com/albumcover/ZZl6Oc9rIGc.html')
+		while ret != 0:
+			downloadcmd='curl -L -s %s -o/root/movie/%s'%(allurls[key],key)
+			ret = os.system(downloadcmd)
+			if ret != 0:#download failed
+				print 'download failed'
+				allurls.clear()
+				allurls = geturls(url)
+				continue					
+			index = index+1
+			if (index&7)==0:
+				allurls.clear()
+				allurls = geturls(url)
+	
 
-download_file('http://www.tudou.com/albumcover/ZZl6Oc9rIGc.html')
+#download_file('http://www.tudou.com/albumcover/ZZl6Oc9rIGc.html')

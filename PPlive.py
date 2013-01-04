@@ -1,3 +1,4 @@
+#-*- coding: utf-8 -*-
 import httplib2
 import re
 import time
@@ -40,27 +41,32 @@ def gen_m3u8_url(in_url,id):
 				#print j[1]['name'][0]
 				#print j[1]['name'][1]
 				url = url.replace('\\','')
-				res["tv_name"]=j[1]['name'][0]
-				res["playing"]=j[1]['name'][1]
-				print url
+				playing=j[1]['name'][1].encode('utf-8')
+				if len(playing)>0:
+					res["img_alt"]=j[1]['name'][0].encode("utf-8")+'<'+j[1]['name'][1].encode("utf-8")+">"
+				else:
+					res["img_alt"]=j[1]['name'][0].encode("utf-8")
+				res["img_url"]=''
 				resp,content=h.request(url,'GET')
 				if resp.status==200:
 					play_ids=re.findall('"ipadurl":"([^"]+)"',content)
 					if play_ids:
 						for play_id in play_ids:
 							m3u8url = play_id.replace('\\','')
-							res["url"]=m3u8url
+							res["videourl"]=m3u8url
 							return_urls.append(res)
-	#print return_urls
 	return return_urls
 				
-
-if __name__ == '__main__':
-	#id='25'
+def getppliveurl():
+	ret=[]
 	pptv_lists=gen_pptv_list()
 	for id in pptv_lists.keys():
 		urls=gen_m3u8_url(pptv_lists[id]['url'],id)
-		for url in urls:
-			print url
+		if len(urls)>0:
+			ret = ret+urls
+			#ret.append(urls)		
+	return ret
+		
+
 
 	
