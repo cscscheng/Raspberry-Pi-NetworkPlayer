@@ -41,6 +41,13 @@ class ThreadUrl(threading.Thread):
 
             #signals to queue job is done
             self.queue.task_done()
+def get_fileextname(url):
+	bn=os.path.basename(url)
+	if len(bn)>2:
+		fn=re.sub(r'[\w]*\.([\w]+).*',r'\1',bn)
+		return fn
+	else:
+		return ""
 
 def geturls(url):
 	returls={}
@@ -57,7 +64,8 @@ def geturls(url):
 				filename=filename.decode('gbk').encode('utf-8')
 				filename=filename+'.PART%d'%index
 				#filename=re.sub('-0*','.PART',filename)
-				filename=filename+'.mp4'
+				ext=get_fileextname(url)
+				filename=filename+ext
 				#print filename.decode('utf-8')
 				returls[filename]=url
 				index=index+1
@@ -72,7 +80,8 @@ def geturls(url):
 					for filename,url in urls:
 						filename=filename.decode('gbk').encode('utf-8')
 						filename=filename+'.PART%d'%index
-						filename=filename+'.flv'
+						ext=get_fileextname(url)
+						filename=filename+ext
 						#print filename.decode('utf-8')
 						returls[filename]=url
 						index=index+1

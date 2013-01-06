@@ -4,12 +4,16 @@ import re
 import time
 import json
 import os
+import Queue
+import threading
+
 
 last_time_dict={}
 loop = True;
 last_ts_file_name=''
 ts_file_download_num =0
 ts_file_download_name=[]
+last_m3u8_url = ''
 
 def gen_pptv_list():
 	lists=dict()
@@ -123,12 +127,14 @@ def get_ts_by_url(infos):
 					break	
 				else:
 					retry = retry-1
+					print 'get_ts_by_url ',retry
 					if retry==0:
 						ret = -1
 						break	
 	return ret
 	
 def parse_m3u8(ct,num):
+	global last_m3u8_url
 	rt=[]
 	mp='BANDWIDTH=([0-9]+)[\s]+?([\S]+)'
 	murls=re.findall(mp,ct)
@@ -142,6 +148,8 @@ def parse_m3u8(ct,num):
 			dic_list.append(m_dic)
 		#m_dic=m_dic.sort()
 		if len(dic_list)>0:
+			if dic_list[0]['url'] != last_m3u8_url:
+				last_m3u8_url=dic_list[0]['url']
 			return get_ts_info(dic_list[0]['url'],num)
 		else:
 			return rt
@@ -205,7 +213,11 @@ def check_ts_file(url):
 	global ts_file_download_name
 	global ts_file_download_num
 	global last_ts_file_name
+	global last_m3u8_url
+	
 	ts=[]
+	if len(last_m3u8_url)>0:
+		url=last_m3u8_url
 	ts=get_ts_info(url,1)
 	if len(ts)>0:
 		if ts[0]['ts_name'] != last_ts_file_name:
@@ -213,36 +225,69 @@ def check_ts_file(url):
 		elif len(ts_file_download_name)>30:
 			f=ts_file_download_name[0]
 			del ts_file_download_name[0]
-			os.unlink(f)
-			print 'del file :',f
+			if os.path.exists(f):
+				os.unlink(f)
+			else:
+				print 'file not found',f
 			
 def del_file_by_name(path,name):
 	for root, dirs, files in os.walk(path, topdown=False):
 		for f in files:
 			if re.search(name,f):
-				os.remove(os.path.join(root,f))
-
-
-def start_tv(url):				
-	del_file_by_name('/var/www','ts')	
-	write_m3u8_file('/var/www/live.m3u8')
-	ts_infos=get_ts_info(url,5)
-	rt = get_ts_by_url(ts_infos)
-	print 'start play now...'	
-	while loop:
-		time.sleep(1)
-		check_ts_file(url)		
+				os.remove(os.path.join(root,f))		
 
 def stop_tv():
 	loop=False
-			
-del_file_by_name('/var/www','ts')	
-write_m3u8_file('/var/www/live.m3u8')
-ts_infos=get_ts_info('http://web-play.pptv.com/web-m3u8-300159.m3u8',5)
-rt = get_ts_by_url(ts_infos)
-print 'start play now...'
-ii=300
-while ii>0:
-	time.sleep(1)
-	check_ts_file('http://web-play.pptv.com/web-m3u8-300159.m3u8')
+
+class ThreadTV(threading.Thread):
+	"""Threaded TV"""
+	def __init__(self):
+		threading.Thread.__init__(self)
+		self.url=''
+		self.status='stop'
+	def set_tv_url(self,url):
+		self.url=url
+		data={}
+		data['url']=url
+		data['cmd']=''
+		if len(url)>0:
+			del_file_by_name('/var/www','ts')	
+			write_m3u8_file('/var/www/live.m3u8')
+			ts_infos=get_ts_info(url,5)
+			get_ts_by_url(ts_infos)
+			data['cmd']='play'
+			print 'start player here'
+			f=open('/root/play/plt.txt','w+')
+			f.write('TV')
+			f.close()
+		else:
+			data['cmd']='stop'
+			stop_tv()
+			f=open('/root/play/plt.txt','w+')
+			f.write('')
+			f.close()
+		self.url=url	
+	def run(self):
+	  while True:
+			if len(self.url)>0:
+				check_ts_file(self.url)						
+			time.sleep(1)
+
+tv_thread = ThreadTV()
+
+def init_tv():
+	global tv_thread
+	tv_thread.setDaemon(True)
+	tv_thread.start()
+
+def start_tv(url):				
+	global 	tv_thread
+	tv_thread.set_tv_url(url)
 	
+def test(url):
+	init_tv()
+	start_tv(url)
+	while True:
+		time.sleep(1)
+
+#test('http://web-play.pptv.com/web-m3u8-300163.m3u8')
