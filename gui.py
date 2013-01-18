@@ -4,17 +4,22 @@ import pygame
 import Image
 import re
 import os
+import time
 import httplib2
-import getqqvideo
+import player
+import getvideoinfos
 import json
 import random
 import PPlive
+import evdev
+import threading
+import download
 
-		
+	
 windows_infos={}
 menu_infos=[]
 pic_infos=[]
-menu_type_list=["qq","youku","tudou"]
+menu_type_list=['hlstv',"qq","youku","tudou"]
 menu_focus= 0;
 
 pic_focus = 0;
@@ -31,9 +36,9 @@ menu_size=(menu_w,menu_h)
 ratio_w = 1.0
 ratio_h = 1.0
 
-menu_start =(50,10)
-pic_start = (50,75)
-search_bar_start =(360,30)
+menu_start =(50,8)
+pic_start = (50,76)
+search_bar_start =(360,44)
 
 word_offset_x = 0
 word_offset_y = 0
@@ -71,7 +76,8 @@ qq_key_s = ''
 
 
 videos=[]
-
+pygame_init=False
+download_manage=download.ThreadDownloadManage()
 
 def get_kbelement_by_pos(x,y):
 	global kb_startx
@@ -223,15 +229,9 @@ def draw_search_bar(screen,font,str):
 	pygame.draw.rect(screen,blue,rect,2)
 	img='./search.png'
 	pos=[wx+200,wy]
-	img_str=resizepic(img,(26,26))
-	pyim = pygame.image.fromstring(img_str,(26,26),"RGBA").convert()
-	screen.blit(pyim,pos)
-	
-	
-	
-	
-#res=query_input("shashou")
-
+	img_mode,img_str=resizepic(img,(26,26))
+	pyim = pygame.image.fromstring(img_str,(26,26),img_mode).convert()
+	screen.blit(pyim,pos)	
 
 def handle_kb_event(screen,font,event):
 	global kb_input_vals
@@ -353,11 +353,9 @@ def draw_enter(screen,x,y):
 	
 def draw_space(screen,x,y):
 	x1=x+8
-	y1=y+24
-	
+	y1=y+24	
 	x2=x1
-	y2=y1-4
-	
+	y2=y1-4	
 	x3=x2+16
 	y3=y2
 	pygame.draw.line(screen,black,(x2,y2),(x2,y1))
@@ -506,7 +504,7 @@ def resizepic(file,size):
 		target = img.resize(size,Image.ANTIALIAS)		
 		#savename=basename+"_%dX%d"%(pic_w,pic_h)+ext
 		#target.save(savename,extname)
-	return target.tostring()
+		return [target.mode,target.tostring()]
 
 def pic_lose_focus(screen,font,pic_index):
 	global pic_infos
@@ -515,8 +513,8 @@ def pic_lose_focus(screen,font,pic_index):
 		img=pic_infos[pic_index]["pic"]
 		if len(img)>1:
 			pos=(pic_infos[pic_index]["x"],pic_infos[pic_index]["y"])
-			img_str=resizepic(img,pic_size)
-			img_mode=getimgmode(img)
+			img_mode,img_str=resizepic(img,pic_size)
+			#img_mode=getimgmode(img)
 			pyim = pygame.image.fromstring(img_str,pic_size,img_mode).convert()
 			screen.blit(pyim,pos)
 		else:
@@ -569,8 +567,8 @@ def draw_pic_info(screen,font,pic_index):
 		img=pic_infos[pic_index]["pic"]
 		if len(img)>1 and os.path.exists(img):
 			pos=[pic_infos[pic_index]["x"],pic_infos[pic_index]["y"]]
-			img_str=resizepic(img,pic_size)
-			pyim = pygame.image.fromstring(img_str,pic_size,"RGB").convert()
+			img_mode,img_str=resizepic(img,pic_size)
+			pyim = pygame.image.fromstring(img_str,pic_size,img_mode).convert()
 			screen.blit(pyim,pos)
 		else:
 			pygame.draw.rect(screen,black,rect)	
@@ -603,8 +601,8 @@ def draw_menu_info(screen,menu_font,menu_index):
 		txt_w,txt_h=menu_font.size(unicode_str)
 		txt = menu_font.render(unicode_str,False,black)		
 		bk_size=(menu_w,menu_h)
-		img_str=resizepic(bk,bk_size)
-		img_mode=getimgmode(bk)
+		img_mode,img_str=resizepic(bk,bk_size)
+		#img_mode=getimgmode(bk)
 		pyim = pygame.image.fromstring(img_str,bk_size,img_mode).convert()
 		pos=(menu_start[0]+menu_index*menu_w,menu_start[1])
 		screen.blit(pyim,pos)
@@ -630,8 +628,8 @@ def menu_lose_focus(screen,menu_font,menu_index):
 		txt_w,txt_h=menu_font.size(unicode_str)
 		txt = menu_font.render(unicode_str,False,black)		
 		bk_size=(menu_w,menu_h)
-		img_str=resizepic(bk,bk_size)
-		img_mode=getimgmode(bk)
+		img_mode,img_str=resizepic(bk,bk_size)
+		#img_mode=getimgmode(bk)
 		pyim = pygame.image.fromstring(img_str,bk_size,img_mode).convert()
 		pos=(menu_start[0]+menu_index*menu_w,menu_start[1])
 		screen.blit(pyim,pos)
@@ -649,8 +647,8 @@ def menu_get_focus(screen,menu_font,menu_index):
 		txt_w,txt_h=menu_font.size(unicode_str)
 		txt = menu_font.render(unicode_str,False,black)		
 		bk_size=(menu_w,menu_h)
-		img_str=resizepic(bk,bk_size)
-		img_mode=getimgmode(bk)
+		img_mode,img_str=resizepic(bk,bk_size)
+		#img_mode=getimgmode(bk)
 		pyim = pygame.image.fromstring(img_str,bk_size,img_mode).convert()
 		pos=(menu_start[0]+menu_index*menu_w,menu_start[1])
 		screen.blit(pyim,pos)
@@ -659,8 +657,7 @@ def menu_get_focus(screen,menu_font,menu_index):
 		pos = (menu_start[0]+menu_index*menu_w+offset_x,menu_start[1]+offset_y)
 		screen.blit(txt,pos)
 
-def change_menu_focus(old,new):
-	
+def change_menu_focus(old,new):	
 	print "change_menu_focus"
 	
 
@@ -741,7 +738,9 @@ def deal_key_event(screen,font,event):
 				update_windows(screen,font)
 		elif 	event.key == pygame.K_RETURN:
 			print 'key play movie :',pic_infos[pic_focus]['url']
-				
+			set_play_param(pic_infos[pic_focus]['url'])			
+			exit_pygame()
+			
 	elif event.type==pygame.MOUSEBUTTONDOWN or event.type==pygame.MOUSEBUTTONUP or event.type==pygame.MOUSEMOTION:
 		deal_mouse_event(screen,font,event)
 	elif event.type==pygame.QUIT:
@@ -863,10 +862,12 @@ def deal_mouse_event(screen,font,event):
 					elif e=='pic':
 						print 'play movie.url:',pic_infos[pic_focus]['url']
 						hidden_kb(screen,font)
+						set_play_param(pic_infos[pic_focus]['url'])			
+						exit_pygame()
 					elif  e=='search_button':
 						print 'do search :',search_words
 						hidden_kb(screen,font)
-					
+						
 								
 			if b2 != m_b2:
 				if m_b2 == 1:
@@ -917,8 +918,8 @@ def gen_video_infos_by_type(strtype,url=''):
 	if strtype=='qq':
 		if len(url)<7:
 			url="http://v.qq.com/"			
-		videos=getqqvideo.get_qq_video_infos(url)		
-	elif strtype=='pplivetv':
+		videos=getvideoinfos.get_qq_video_infos(url)		
+	elif strtype=='hlstv':
 		videos=PPlive.getppliveurl()
 		
 	if len(videos)>0:
@@ -930,16 +931,12 @@ def gen_video_infos_by_type(strtype,url=''):
 def start_gui(w,h):
 	global videos
 	global total_pic_infos	
+	global pygame_init
 	size=[w,h]	
-	gen_video_infos_by_type('pplivetv')
-	#videos=getqqvideo.get_qq_video_infos("http://v.qq.com/")
-	#total_pic_infos = len(videos)
-	#gen_pic_infos(videos,0)
-	menu_infos.append(getmenu_info("PPTV"))
-	menu_infos.append(getmenu_info("QQ视频"))	
+	
 	pygame.init()
 	#size=[600,480]
-	screen=pygame.display.set_mode(size,pygame.FULLSCREEN)	
+	screen=pygame.display.set_mode(size)	
 	pygame.display.set_caption("NetWork Player")	
 	#Loop until the user clicks the close button.
 	done=False
@@ -964,23 +961,159 @@ def start_gui(w,h):
 	menu_get_focus(screen,menu_font,menu_focus)
 	draw_search_bar(screen,font,'')
 	pygame.time.set_timer(pygame.USEREVENT,300)
+	pygame_init = True
 	while done==False:
 	    time_passed = clock.tick(30)    
 	    for event in pygame.event.get(): # User did something    	
-	    	if event:
+	    	if event:	
 	    		deal_key_event(screen,font,event)
-	    		handle_kb_event(screen,font,event)
+	    		handle_kb_event(screen,font,event)    		
 	    		if event.type==pygame.KEYDOWN:
 	    			if event.key==pygame.K_END:
-	    				done=True
+	    				pygame.display.quit()
+	    				pygame_init=False
 	    			elif event.key == pygame.K_HOME:
-	    				draw_kb(screen,font)    			
+	    				if pygame_init==False:
+	    					pygame.display.init()
+	    					pygame_init=True
+	    					screen=pygame.display.set_mode(size)
+	    					update_windows(screen,font)	    						
 	    		elif event.type==pygame.QUIT:
 	    			done = True
 	    		elif event.type == pygame.USEREVENT:
-	    			update_pic_word(screen,font,pic_focus)
-	    pygame.display.flip()
+	    			if pygame_init:
+	    				update_pic_word(screen,font,pic_focus)	    		
+	    		
+	    if pygame_init:			
+	    	pygame.display.flip()
 	pygame.quit ()
+	pygame_init=False
 
 
-start_gui(600,480)
+def set_play_param(url):
+	global menu_type_list
+	global menu_focus
+	print 'play url',url
+	if menu_type_list[menu_focus]=='hlstv':
+		print 'hlstv'
+		PPlive.start_tv(url)		
+	elif menu_type_list[menu_focus]=='qq':
+		print 'v.qq.com'
+		vfs={}
+		if len(url)>0:
+			vfs=getvideoinfos.geturls(url)
+		download_manage.set_url(vfs)
+
+			
+	
+def send_event(keytype,attr):
+	global pygame_init
+	if pygame_init:
+		ev=pygame.event.Event(keytype,attr)
+		pygame.event.post(ev)
+	else:
+		print 'pygame_init false'
+
+def exit_pygame():
+	send_event(pygame.QUIT,{})
+#gui thread
+#download thread
+#play thread
+#control thread...main thread
+#conf thread ...save the last state
+
+#log thread
+#console thread
+#web thread
+
+class ThreadEvent(threading.Thread):
+	"""Threaded Event"""
+	def __init__(self):
+		threading.Thread.__init__(self)
+		self.runing=True
+	
+	def run(self):
+		dev = evdev.Device('/dev/input/event0')
+		last={}
+		while self.runing:
+			dev.poll()
+			time.sleep(0.3)
+			last=dev.get_last_event()
+			for key in last.keys():
+				if last[key] == 'KEY_STOPCD':
+					print 'stop_player'
+					player.stop_player()
+					dev.quit()
+					return
+
+def find_start_file(path):
+	fn=''
+	for root, dirs, files in os.walk(path, topdown=False):
+		for f in files:
+			if re.search('\.PART[0-9]+?\.',f):
+				fn=os.path.join(root,f)
+				return fn	
+	return fn
+
+def play_file(filename=''):
+	playcmd=''
+	if len(filename)>7:
+		playcmd='/root/omxplayer.bin %s'%(filename)
+		fl=os.path.getsize(filename)
+		while fl<1024*1024:
+			time.sleep(1)
+	else:		
+		while len(playcmd)<10:
+			time.sleep(5)
+			fn=find_start_file('./')
+			if len(fn)>0:
+				playcmd='/root/omxplayer.bin %s'%(fn)				
+				fl=os.path.getsize(fn)
+				while fl<5*1024*1024:
+					time.sleep(1)
+					fl=os.path.getsize(fn)
+	return os.system(playcmd)
+
+def start_evdev():
+	print 'start evdev thread...'
+	te=ThreadEvent()
+	te.setDaemon(True)
+	te.start()
+
+
+
+def start():	
+	#start download thread
+	print 'start'
+	gen_video_infos_by_type('hlstv')
+	menu_infos.append(getmenu_info("PPTV"))
+	menu_infos.append(getmenu_info("QQ视频"))
+	PPlive.init_tv()
+	download_manage.setDaemon(True)
+	download_manage.start()
+	print 'init finish'
+	
+	while True:
+		start_gui(600,480)
+		start_evdev()
+		#start key manage to deal the player control		
+		print 'startplay'
+		#check if need restart player
+		if menu_type_list[menu_focus]=='hlstv':
+			os.system('/root/omxplayer.bin http://localhost/index.m3u8')
+		else:
+			#find start file...
+			play_file()			
+		set_play_param('')
+		#exit key manage pygame will deal the key event			
+		print 'restart gui'
+		
+	#start gui thread
+	#start_gui(600,480)
+start()	
+#start_gui(600,480)	
+	
+
+
+
+

@@ -12,80 +12,44 @@ respqueue=Queue.Queue()
 flv_FLVCD_URL='http://www.flvcd.com/parse.php?format=&kw='
 high_FLVCD_URL='http://www.flvcd.com/parse.php?format=high&kw='
 super_FLVCD_URL='http://www.flvcd.com/parse.php?format=super&kw='
+
 regs={}
 regs['youku']='<U>([^<\s]*)'
 regs['tudou']='<U>([^<\s]*)'
 
-class ThreadUrl(threading.Thread):
-    """Threaded Url Grab"""
-    def __init__(self, queue, out_queue):
-        threading.Thread.__init__(self)
-        self.queue = urlqueue
-        self.out_queue = respqueue
-        self.data={}
-    def run(self):
-        while True:
-            #grabs host from queue
-            urlinfo = self.queue.get()
-            #grabs urls of hosts and then grabs chunk of webpage
-            for key in urlinfo:
-            	filename=key
-            	host=urlinfo[key]
-            	print 'thread start working...file:%s host:%s',filename,host
-            	file=open(filename,'w')
-            	url = urllib2.urlopen(host)
-            	chunk = url.read()
-            	file.write(chunk)
-            	#self.data[host]=chunk
-            #place chunk into out queue
-
-            #signals to queue job is done
-            self.queue.task_done()
-def get_fileextname(url):
-	bn=os.path.basename(url)
-	if len(bn)>2:
-		fn=re.sub(r'[\w]*\.([\w]+).*',r'\1',bn)
-		return fn
-	else:
-		return ""
-
-def geturls(url):
-	returls={}
-	reg='<N>([^<]*).*?<U>([^<\s]*)'
+def geturls(url,ftype='high'):
+	returls=[]
+	flvcd_url=''
+	reg='<N>([^<]*).*?<U>([^<\s]*).*?<X>([0-9]*).*?(<EXPLODEID>([0-9]*)){0,1}'
 	h=httplib2.Http()
-	flvcd_url = high_FLVCD_URL+url
+	if ftype== 'high':
+		flvcd_url = high_FLVCD_URL+url
+	elif ftype=='super':
+		flvcd_url=super_FLVCD_URL+url
+	elif ftype=='full':
+		flvcd_url=super_FLVCD_URL+url
+	else:
+		flvcd_url=flv_FLVCD_URL+url
 	resp,content=h.request(flvcd_url,'GET')
 	if resp.status==200:
 		index=0
 		content=re.sub('[\s]','',content)
 		urls=re.findall(reg,content,re.M)
 		if urls :
-			for filename,url in urls:
-				filename=filename.decode('gbk').encode('utf-8')
-				filename=filename+'.PART%d'%index
-				#filename=re.sub('-0*','.PART',filename)
-				ext=get_fileextname(url)
-				filename=filename+ext
-				#print filename.decode('utf-8')
-				returls[filename]=url
+			for filename,url,num,tmp,part in urls:
+				#filename=filename.decode('gbk').encode('utf-8')
+				filename='file'
+				filename=filename+'.PART%d'%index				
+				filename=filename+'.mp4'
+				info={}
+				info['url']=url
+				info['fn'] = filename
+				info['part'] = num
+				returls.append(info)
 				index=index+1
 			return returls
-		else:
-			flvcd_url = flv_FLVCD_URL+url
-			resp,content=h.request(flvcd_url,'GET')
-			if resp.status==200:
-				content=re.sub('[\s]','',content)
-				urls=re.findall(reg,content)
-				if urls :
-					for filename,url in urls:
-						filename=filename.decode('gbk').encode('utf-8')
-						filename=filename+'.PART%d'%index
-						ext=get_fileextname(url)
-						filename=filename+ext
-						#print filename.decode('utf-8')
-						returls[filename]=url
-						index=index+1
-			return returls
+	return []
+	
 def download_file(url):
 	index=0
 	allurls = geturls(url)

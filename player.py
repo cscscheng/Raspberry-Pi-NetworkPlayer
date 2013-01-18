@@ -12,10 +12,13 @@ def is_running():
 	return True
 
 def stop_player():
-	cmdstr='killall tvplayer.sh'
-	os.system(cmdstr)
-	cmdstr='killall omxplayer.bin'
-	os.system(cmdstr)
+	#cmdstr='killall tvplayer.sh'
+	#os.system(cmdstr)
+	#cmdstr='killall omxplayer.bin'
+	#os.system(cmdstr)
+	f=open('/root/playerctrl','w+')
+	f.write('q')
+	f.close()
 	time.sleep(1)
 	
 

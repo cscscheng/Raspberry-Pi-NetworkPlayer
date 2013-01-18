@@ -6,6 +6,7 @@ import json
 import os
 import Queue
 import threading
+import netinfo
 
 
 last_time_dict={}
@@ -14,6 +15,11 @@ last_ts_file_name=''
 ts_file_download_num =0
 ts_file_download_name=[]
 last_m3u8_url = ''
+lan_ip=''
+wan_ip=''
+wlan_ip=''
+ts_file_duration='5'
+ts_file_seq='271547071'
 
 def gen_pptv_list():
 	lists=dict()
@@ -80,19 +86,23 @@ def getppliveurl():
 		
 def write_m3u8_file(filename,content=''):
 	print 'write_m3u8_file'
-	f=open(filename,'w+')				
-	f.write('#EXTM3U\r\n#EXT-X-TARGETDURATION:5\r\n#EXT-X-MEDIA-SEQUENCE:271472474\r\n')
+	global ts_file_duration
+	f=open(filename,'w+')	
+	b1='#EXTM3U\r\n#EXT-X-TARGETDURATION:%s\r\n#EXT-X-MEDIA-SEQUENCE:%s\r\n'%(ts_file_duration,ts_file_seq)			
+	f.write(b1)
 	if len(content)>0:
-		f.write('#EXTINF:5,\r\n')
-		f.write(content)
-		f.write('\r\n')
+		bf='#EXTINF:%s,\r\n'%ts_file_duration
+		f.write(bf)
+		
 	f.close()
 
-	
+
 def update_m3u8_file(filename,content):
+	global ts_file_duration
 	if os.path.exists(filename):
-		f=open(filename,'a+')		
-		f.write('#EXTINF:5,\r\n')
+		f=open(filename,'a+')
+		bf='#EXTINF:%s,\r\n'%ts_file_duration
+		f.write(bf)
 		f.write(content)
 		f.write('\r\n')
 		f.close()
@@ -110,6 +120,9 @@ def get_ts_by_url(infos):
 			url=info['url']
 			filename=info['ts_name']
 			retry=8
+			fullname='/var/www'+filename			
+			if  fullname in ts_file_download_name:
+				continue
 			while retry>0:
 				resp,content=h.request(url,'GET')
 				if resp.status==200:
@@ -118,9 +131,7 @@ def get_ts_by_url(infos):
 					filename = pre_url+filename
 					f=open(filename,'wb')
 					f.write(content)
-					f.close()	
-					url='http://192.168.2.22/%s'%last_ts_file_name				
-					update_m3u8_file('/var/www/live.m3u8',url)
+					f.close()
 					ret += 1	
 					ts_file_download_num += 1
 					ts_file_download_name.append(filename)
@@ -132,9 +143,36 @@ def get_ts_by_url(infos):
 						ret = -1
 						break	
 	return ret
-	
+
+def find_m3u8_info(url):
+	h=httplib2.Http()
+	resp,content=h.request(url,'GET')
+	if resp.status==200:
+		fn=get_filename(url)
+		if len(fn and 'm3u8'):
+			
+			get_ts_duration(ct)
+		else:
+			print 'error type:',fn
+
+def get_ts_duration(ct):
+	global ts_file_duration
+	global ts_file_seq
+	td='#EXT-X-TARGETDURATION:([0-9]+)'
+	tds=re.findall(td,ct)
+	if tds:
+		ts_file_duration=tds[0]
+	td='#EXT-X-MEDIA-SEQUENCE:([0-9]+)'
+	tds=re.findall(td,ct)
+	if tds:
+		ts_file_seq=tds[0]
+
+
 def parse_m3u8(ct,num):
 	global last_m3u8_url
+	global ts_file_duration
+	global ts_file_seq	 
+	get_ts_duration(ct)	
 	rt=[]
 	mp='BANDWIDTH=([0-9]+)[\s]+?([\S]+)'
 	murls=re.findall(mp,ct)
@@ -209,6 +247,22 @@ def load_from_file(fn):
 			v['videourl']=v['videourl'].encode('utf-8')
 			v['img_url']=v['img_url'].encode('utf-8')
 	return ret
+
+def modify_m3u8_file(fn,str):
+	if os.path.exists(fn):
+		f1=open(fn,'r')
+		f2=open('./tmp.m3u8','w+')
+		ct=f1.read(10240)
+		if len(ct)>30:
+			pt='#EXTINF:5,[\s]+?http[\S]+?%s'%str
+			newct = re.sub(pt,'',ct)
+			f2.write(newct)
+		f2.close()			
+		f1.close()
+		
+		
+		
+	
 def check_ts_file(url):
 	global ts_file_download_name
 	global ts_file_download_num
@@ -219,14 +273,23 @@ def check_ts_file(url):
 	if len(last_m3u8_url)>0:
 		url=last_m3u8_url
 	ts=get_ts_info(url,1)
+
 	if len(ts)>0:
-		if ts[0]['ts_name'] != last_ts_file_name:
+		full='/var/www/'+ts[0]['ts_name']
+		if full not in ts_file_download_name and last_ts_file_name != ts[0]['ts_name']:			
 			get_ts_by_url(ts)
+			for info in ts:
+				if wlan_ip != '': 	
+					url='http://%s/%s'%(wlan_ip,get_filename(info['url']))	
+				else:
+					url='http://localhost/%s'%(get_filename(info['url']))			
+				update_m3u8_file('/var/www/live.m3u8',url)
 		elif len(ts_file_download_name)>30:
 			f=ts_file_download_name[0]
-			del ts_file_download_name[0]
+			del ts_file_download_name[0]			
+			#modify_m3u8_file('/var/www/live.m3u8',os.path.basename(f))
 			if os.path.exists(f):
-				os.unlink(f)
+				os.unlink(f)				
 			else:
 				print 'file not found',f
 			
@@ -237,7 +300,11 @@ def del_file_by_name(path,name):
 				os.remove(os.path.join(root,f))		
 
 def stop_tv():
+	global ts_file_download_name
 	loop=False
+	while len(ts_file_download_name)>0:
+		ts_file_download_name.pop()
+	
 
 class ThreadTV(threading.Thread):
 	"""Threaded TV"""
@@ -246,20 +313,26 @@ class ThreadTV(threading.Thread):
 		self.url=''
 		self.status='stop'
 	def set_tv_url(self,url):
-		self.url=url
-		data={}
-		data['url']=url
-		data['cmd']=''
+		global ts_file_duration
+		global ts_file_seq	
+		self.url=''	
 		if len(url)>0:
-			del_file_by_name('/var/www','ts')	
+			del_file_by_name('/var/www','ts')			
+			ts_infos=get_ts_info(url,2)
 			write_m3u8_file('/var/www/live.m3u8')
-			ts_infos=get_ts_info(url,5)
 			get_ts_by_url(ts_infos)
-			data['cmd']='play'
+			for info in ts_infos:
+				if wlan_ip != '': 	
+					url='http://%s/%s'%(wlan_ip,get_filename(info['url']))	
+				else:
+					url='http://localhost/%s'%(get_filename(info['url']))			
+				update_m3u8_file('/var/www/live.m3u8',url)
+			#write_m3u8_file('/var/www/live.m3u8')
 			print 'start player here'
 			f=open('/root/play/plt.txt','w+')
 			f.write('TV')
 			f.close()
+			self.url=url
 		else:
 			data['cmd']='stop'
 			stop_tv()
@@ -270,13 +343,32 @@ class ThreadTV(threading.Thread):
 	def run(self):
 	  while True:
 			if len(self.url)>0:
-				check_ts_file(self.url)						
+				check_ts_file(self.url)				
 			time.sleep(1)
 
 tv_thread = ThreadTV()
 
 def init_tv():
+	global lan_ip
+	global wan_ip
+	global wlan_ip
 	global tv_thread
+	for dev in netinfo.list_active_devs():
+		print dev
+		if dev == 'eth0':
+			lan_ip = netinfo.get_ip(dev)
+			print 'get lan ip:',lan_ip
+			print dev
+			print netinfo.get_ip(dev)
+		elif dev == 'wlan0':
+			wlan_ip = netinfo.get_ip(dev)
+			print wlan_ip
+		elif dev == 'lo':
+			print 'local ip'
+		##todo wan ip
+		elif dev == 'ppp0':
+			wan_ip = netinfo.get_ip(dev)
+	
 	tv_thread.setDaemon(True)
 	tv_thread.start()
 
@@ -290,4 +382,4 @@ def test(url):
 	while True:
 		time.sleep(1)
 
-#test('http://web-play.pptv.com/web-m3u8-300163.m3u8')
+test('http://web-play.pptv.com/web-m3u8-300163.m3u8')
