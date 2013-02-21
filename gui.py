@@ -696,7 +696,16 @@ def deal_key_event(screen,font,event):
 	if event.type==pygame.KEYDOWN:
 		if event.key==pygame.K_SPACE:
 			done=True
-		
+		elif event.key==pygame.K_TAB:
+			if menu_focus == 0:
+				menu_focus=1
+				gen_video_infos_by_type('qq')
+			else:
+				menu_focus=0
+				gen_video_infos_by_type('hlstv')
+				
+			update_windows(screen,font)
+			
 		elif event.key==pygame.K_LEFT:
 			pic_lose_focus(screen,font,pic_focus)
 			pic_focus = pic_focus-1
@@ -834,7 +843,7 @@ def deal_mouse_event(screen,font,event):
 						gen_pic_infos(videos,pic_start_index-20)
 					else:
 						gen_pic_infos(videos,0)
-					update_windows()
+					update_windows(screen,font)
 			elif event.button == 5:
 				if(pic_end_index <total_pic_infos):
 					gen_pic_infos(videos,pic_start_index+20)
@@ -1084,15 +1093,13 @@ def start_evdev():
 
 def start():	
 	#start download thread
-	print 'start'
 	gen_video_infos_by_type('hlstv')
 	menu_infos.append(getmenu_info("PPTV"))
 	menu_infos.append(getmenu_info("QQ视频"))
 	PPlive.init_tv()
 	download_manage.setDaemon(True)
 	download_manage.start()
-	print 'init finish'
-	
+	print 'init finish'	
 	while True:
 		start_gui(600,480)
 		start_evdev()

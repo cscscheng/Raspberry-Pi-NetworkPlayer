@@ -32,17 +32,32 @@ def geturls(url,ftype='high'):
 	resp,content=h.request(flvcd_url,'GET')
 	if resp.status==200:
 		index=0
-		content=re.sub('[\s]','',content)
-		urls=re.findall(reg,content,re.M)
-		if urls :
-			for filename,url,num,tmp,part in urls:
+		soup = BeautifulSoup(content)
+		hiddens=soup.find_all(type="hidden")
+		vl=[]
+		filename='file'
+		Key=''
+		for hidden in hiddens:
+			attrs=hidden.attrs
+			if 'value' in attrs:				
+				v=hidden['value']
+				if hidden['name'] == 'inf':
+					vl=v.split('\r\n')
+				elif hidden['name'] == 'name':
+					filename=v.encode('utf-8')
+				elif hidden['name'] == 'msKey':
+					Key=v.encode('utf-8')
+		
+		if len(vl)>0:
+			for vv in vl:
+				info={}
+				info['url']=vv.encode('utf-8')
 				filename='file'
 				filename=filename+'.PART%d'%index				
 				filename=filename+'.mp4'
-				info={}
-				info['url']=url
 				info['fn'] = filename
-				info['part'] = num
+				info['part'] = index
+				info['msKey']=Key
 				returls.append(info)
 				index=index+1
 			return returls
