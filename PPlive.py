@@ -6,7 +6,7 @@ import json
 import os
 import Queue
 import threading
-import netinfo
+import cntv
 
 
 last_time_dict={}
@@ -20,12 +20,13 @@ wan_ip=''
 wlan_ip=''
 ts_file_duration='5'
 ts_file_seq='271547071'
-
+ipadagent='Mozilla/5.0 (iPad; U; CPU OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10 (KHTML, like Gecko) Version/5.0.1 Mobile/7B334b Safari/531.21.10'
+IPAD_AGENT={'User-Agent':ipadagent}
 def gen_pptv_list():
 	lists=dict()
 	h2=httplib2.Http()
 	index_url2='http://live.pptv.com/list/tv_list'
-	resp,content=h2.request(index_url2,'GET')
+	resp,content=h2.request(index_url2,'GET',headers=IPAD_AGENT)
 	if resp.status==200:
 		areas=re.findall('#[^a-zA-Z]+area_id[^0-9]*=[^0-9]*([0-9]*)[^0-9]+>(.*)<\/a>',content)
 		if areas:
@@ -41,7 +42,7 @@ def gen_pptv_list():
 def gen_m3u8_url(in_url,id):
 	return_urls=[]
 	h=httplib2.Http()
-	resp,content=h.request(in_url,'GET')
+	resp,content=h.request(in_url,'GET',headers=IPAD_AGENT)
 	if resp.status==200:
 		#print content
 		urls=re.findall('>(\\\u[^<]*)<[^>]*>[^<]*<[^>]*>[^<]*<[^<]+show_playing[^>]+>[^<]*<[^"]*"([^"]*)"[^>]+>[^<]*<[^>]*>[^<]*[^<]*<[^>]*>[^<]*[^<]*<[^>]*>[^<]*[^<]*<[^>]*>[^<]*[^<]*<[^>]*>([^<]*)<',content)
@@ -56,11 +57,12 @@ def gen_m3u8_url(in_url,id):
 				url = url.replace('\\','')
 				playing=j[1]['name'][1].encode('utf-8')
 				if len(playing)>0:
-					res["img_alt"]=j[1]['name'][0].encode("utf-8")+'<'+j[1]['name'][1].encode("utf-8")+">"
+					res["img_alt"]=j[1]['name'][0].encode("utf-8")
+					#+'<'+j[1]['name'][1].encode("utf-8")+">"
 				else:
 					res["img_alt"]=j[1]['name'][0].encode("utf-8")
 				res["img_url"]=''
-				resp,content=h.request(url,'GET')
+				resp,content=h.request(url,'GET',headers=IPAD_AGENT)
 				if resp.status==200:
 					play_ids=re.findall('"ipadurl":"([^"]+)"',content)
 					if play_ids:
@@ -69,18 +71,34 @@ def gen_m3u8_url(in_url,id):
 							res["videourl"]=m3u8url
 							return_urls.append(res)
 	return return_urls
-				
-def getppliveurl():
+
+def getcntvurls():
 	ret=[]
-	ret = load_from_file("./live.json")
+	ret = load_from_file("./cntv.json")
 	if len(ret)>0:
 		print 'load_from_file OK'
+		return ret
+	ret=cntv.get_cntv_url()
+	if len(ret)>0:
+		write_pptv2file(ret,"./cntv.json")
+	return ret	
+		
+def getppliveurl():
+	ret=[]
+	cntv_infos=getcntvurls()	
+	ret = load_from_file("./live.json")
+	if len(ret)>0:
+		if len(cntv_infos)>19:
+			cntv_infos = cntv_infos[:18]
+		ret = cntv_infos+ret	
+		print 'load_from_file OK'
+		print ret[7]['videourl']
 		return ret
 	pptv_lists=gen_pptv_list()
 	for id in pptv_lists.keys():
 		urls=gen_m3u8_url(pptv_lists[id]['url'],id)
 		if len(urls)>0:
-			ret = ret+urls
+			ret = ret+urls	
 	write_pptv2file(ret,"./live.json")	
 	return ret
 		
@@ -93,7 +111,6 @@ def write_m3u8_file(filename,content=''):
 	if len(content)>0:
 		bf='#EXTINF:%s,\r\n'%ts_file_duration
 		f.write(bf)
-		
 	f.close()
 
 
@@ -124,7 +141,7 @@ def get_ts_by_url(infos):
 			if  fullname in ts_file_download_name:
 				continue
 			while retry>0:
-				resp,content=h.request(url,'GET')
+				resp,content=h.request(url,'GET',headers=IPAD_AGENT)
 				if resp.status==200:
 					pre_url='/var/www/'
 					last_ts_file_name = filename
@@ -146,7 +163,7 @@ def get_ts_by_url(infos):
 
 def find_m3u8_info(url):
 	h=httplib2.Http()
-	resp,content=h.request(url,'GET')
+	resp,content=h.request(url,'GET',headers=IPAD_AGENT)
 	if resp.status==200:
 		fn=get_filename(url)
 		if len(fn and 'm3u8'):
@@ -168,7 +185,7 @@ def get_ts_duration(ct):
 		ts_file_seq=tds[0]
 
 
-def parse_m3u8(ct,num):
+def parse_m3u8(url,ct,num):
 	global last_m3u8_url
 	global ts_file_duration
 	global ts_file_seq	 
@@ -201,17 +218,19 @@ def parse_m3u8(ct,num):
 				ti['url']=url
 				ti['ts_name']=fn
 				rt.append(ti)
+		else:
+			rt=cntv.parse_cntv_m3u82(ct,url)
 		return rt		
 	
 	
 def get_ts_info(url,num):
 	rt=[]
-	h=httplib2.Http()
-	resp,content=h.request(url,'GET')
+	h=httplib2.Http()	
+	resp,content=h.request(url,'GET',headers=IPAD_AGENT)
 	if resp.status==200:
 		fn=get_filename(url)
 		if len(fn and 'm3u8'):
-			rt=parse_m3u8(content,num)
+			rt=parse_m3u8(url,content,num)
 		else:
 			print 'error type:',fn
 	if len(rt)>num and num>0:
@@ -318,7 +337,7 @@ class ThreadTV(threading.Thread):
 		self.url=''	
 		if len(url)>0:
 			del_file_by_name('/var/www','ts')			
-			ts_infos=get_ts_info(url,2)
+			ts_infos=get_ts_info(url,3)
 			write_m3u8_file('/var/www/live.m3u8')
 			get_ts_by_url(ts_infos)
 			for info in ts_infos:
@@ -334,7 +353,6 @@ class ThreadTV(threading.Thread):
 			f.close()
 			self.url=url
 		else:
-			data['cmd']='stop'
 			stop_tv()
 			f=open('/root/play/plt.txt','w+')
 			f.write('')
@@ -353,21 +371,18 @@ def init_tv():
 	global wan_ip
 	global wlan_ip
 	global tv_thread
-	for dev in netinfo.list_active_devs():
-		print dev
-		if dev == 'eth0':
-			lan_ip = netinfo.get_ip(dev)
-			print 'get lan ip:',lan_ip
-			print dev
-			print netinfo.get_ip(dev)
-		elif dev == 'wlan0':
-			wlan_ip = netinfo.get_ip(dev)
-			print wlan_ip
-		elif dev == 'lo':
-			print 'local ip'
-		##todo wan ip
-		elif dev == 'ppp0':
-			wan_ip = netinfo.get_ip(dev)
+	#for dev in netinfo.list_active_devs():
+	#	if dev == 'eth0':
+	#		lan_ip = netinfo.get_ip(dev)
+	#		print 'get lan ip:',lan_ip
+	#	elif dev == 'wlan0':
+	#		wlan_ip = netinfo.get_ip(dev)
+	#		print wlan_ip
+	#	elif dev == 'lo':
+	#		print 'local ip'
+	#	##todo wan ip
+	#	elif dev == 'ppp0':
+	#		wan_ip = netinfo.get_ip(dev)
 	
 	tv_thread.setDaemon(True)
 	tv_thread.start()
@@ -381,5 +396,9 @@ def test(url):
 	start_tv(url)
 	while True:
 		time.sleep(1)
-
-test('http://web-play.pptv.com/web-m3u8-300163.m3u8')
+if __name__ == "__main__":		
+	getppliveurl()
+	ts_infos=get_ts_info('http://hls15.cntv.chinacache.net/cache/11_/seg0/index.m3u8?AUTH=MTM2Mjk2NzE1MA==8D360367683CE3704CEA9C3F05AE4B4B',10)
+	print ts_infos
+	
+	#test('http://web-play.pptv.com/web-m3u8-300163.m3u8')
