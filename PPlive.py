@@ -124,7 +124,7 @@ def update_m3u8_file(filename,content):
 		f.write('\r\n')
 		f.close()
 	
-def get_ts_by_url(infos):
+def get_ts_by_url2(infos):
 	global last_ts_file_name
 	global ts_file_download_name
 	global ts_file_download_num
@@ -161,13 +161,43 @@ def get_ts_by_url(infos):
 						break	
 	return ret
 
+def get_ts_by_url(infos):
+	global last_ts_file_name
+	global ts_file_download_name
+	global ts_file_download_num
+	ret = 0
+	if len(infos)<1:
+		return 0
+	else:
+		h=httplib2.Http()
+		for info in infos:
+			url=info['url']
+			filename=info['ts_name']
+			retry=8
+			fullname='/var/www'+filename			
+			if  fullname in ts_file_download_name:
+				continue
+			file_dir = "/var/www/"
+			filename=file_dir+filename
+			wget_cmd="wget -q -c -T 2 -t 2 -U \""+ipadagent+"\" \""+url+"\" -O "+filename
+			#print wget_cmd
+			ret=os.system(wget_cmd)	
+			if ret != 0:
+				print 'download error '
+				print ret
+			else:
+				last_ts_file_name = filename
+				ts_file_download_num += 1
+				ts_file_download_name.append(filename)
+
+	return ret
+
 def find_m3u8_info(url):
 	h=httplib2.Http()
 	resp,content=h.request(url,'GET',headers=IPAD_AGENT)
 	if resp.status==200:
 		fn=get_filename(url)
 		if len(fn and 'm3u8'):
-			
 			get_ts_duration(ct)
 		else:
 			print 'error type:',fn
@@ -225,7 +255,8 @@ def parse_m3u8(url,ct,num):
 	
 def get_ts_info(url,num):
 	rt=[]
-	h=httplib2.Http()	
+	h=httplib2.Http()
+	#print 'get_ts_info url: '+url	
 	resp,content=h.request(url,'GET',headers=IPAD_AGENT)
 	if resp.status==200:
 		fn=get_filename(url)
@@ -233,8 +264,13 @@ def get_ts_info(url,num):
 			rt=parse_m3u8(url,content,num)
 		else:
 			print 'error type:',fn
+	else:
+		print 'get_ts_info error...'
 	if len(rt)>num and num>0:
 		rt=rt[-(num):]
+	else:
+		print 'error number get_ts_info'
+		#print content
 	return rt
 		
 	
@@ -291,12 +327,17 @@ def check_ts_file(url):
 	ts=[]
 	if len(last_m3u8_url)>0:
 		url=last_m3u8_url
+	#print last_m3u8_url
 	ts=get_ts_info(url,1)
-
+	
 	if len(ts)>0:
 		full='/var/www/'+ts[0]['ts_name']
 		if full not in ts_file_download_name and last_ts_file_name != ts[0]['ts_name']:			
-			get_ts_by_url(ts)
+			ret=get_ts_by_url(ts)
+			if ret != 0:
+				print 'get_ts_by_url error retry'
+				return ret
+
 			for info in ts:
 				if wlan_ip != '': 	
 					url='http://%s/%s'%(wlan_ip,get_filename(info['url']))	
@@ -311,6 +352,9 @@ def check_ts_file(url):
 				os.unlink(f)				
 			else:
 				print 'file not found',f
+	else:
+		print 'check_ts_file error'
+	return 0
 			
 def del_file_by_name(path,name):
 	for root, dirs, files in os.walk(path, topdown=False):
@@ -335,9 +379,12 @@ class ThreadTV(threading.Thread):
 		global ts_file_duration
 		global ts_file_seq	
 		self.url=''	
+		tmp_url=url
+		print tmp_url
 		if len(url)>0:
 			del_file_by_name('/var/www','ts')			
 			ts_infos=get_ts_info(url,3)
+			print url
 			write_m3u8_file('/var/www/live.m3u8')
 			get_ts_by_url(ts_infos)
 			for info in ts_infos:
@@ -346,22 +393,31 @@ class ThreadTV(threading.Thread):
 				else:
 					url='http://localhost/%s'%(get_filename(info['url']))			
 				update_m3u8_file('/var/www/live.m3u8',url)
-			#write_m3u8_file('/var/www/live.m3u8')
-			print 'start player here'
+			
+			#print 'start player here'
+			tmp_plt={}
+			tmp_plt["type"]="TV"
+			tmp_plt["file"]=tmp_url		
+			tmp_plt["time"]= 0
+			wb=json.dumps(tmp_plt)
 			f=open('/root/play/plt.txt','w+')
-			f.write('TV')
+			f.write(wb)	
 			f.close()
-			self.url=url
+			self.url=tmp_url
+			
 		else:
 			stop_tv()
 			f=open('/root/play/plt.txt','w+')
 			f.write('')
 			f.close()
-		self.url=url	
+			self.url=''
 	def run(self):
 	  while True:
 			if len(self.url)>0:
-				check_ts_file(self.url)				
+				ret=check_ts_file(self.url)			
+				if ret != 0:
+					print 'check_ts_file error'
+					continue
 			time.sleep(1)
 
 tv_thread = ThreadTV()
@@ -383,7 +439,6 @@ def init_tv():
 	#	##todo wan ip
 	#	elif dev == 'ppp0':
 	#		wan_ip = netinfo.get_ip(dev)
-	
 	tv_thread.setDaemon(True)
 	tv_thread.start()
 
@@ -397,8 +452,7 @@ def test(url):
 	while True:
 		time.sleep(1)
 if __name__ == "__main__":		
-	getppliveurl()
-	ts_infos=get_ts_info('http://hls15.cntv.chinacache.net/cache/11_/seg0/index.m3u8?AUTH=MTM2Mjk2NzE1MA==8D360367683CE3704CEA9C3F05AE4B4B',10)
-	print ts_infos
-	
-	#test('http://web-play.pptv.com/web-m3u8-300163.m3u8')
+	#getppliveurl()
+	#ts_infos=get_ts_info('http://hls15.cntv.chinacache.net/cache/11_/seg0/index.m3u8?AUTH=MTM2Mjk2NzE1MA==8D360367683CE3704CEA9C3F05AE4B4B',10)
+	#print ts_infos
+	test('http://hls15.cntv.chinacache.net/cache/12_/seg0/index.m3u8')
