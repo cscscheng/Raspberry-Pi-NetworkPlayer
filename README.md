@@ -8,3 +8,8 @@ Raspberry-Pi-NetworkPlayer
     2.播放器omxplayer..
     3.ui相关还没开始
     
+    
+    
+    用xbmc 可以解决目前我能解决的所有问题.....终止更新.
+    
+    根据pptv的插件.修改了一个插件.支持soku的视频搜索...
